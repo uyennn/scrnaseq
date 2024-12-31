@@ -1,0 +1,1137 @@
+---
+title: "20210913"
+output: html_notebook
+---
+
+
+````{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+reticulate::py_install(packages = 'umap-learn')
+library(clustree)
+library(PNWColors)
+library(palettetown)
+library(tidyverse)
+library(pheatmap)
+```
+
+```{r}
+# cell.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210716_Sticker_1000x-cDNA/1000x_cDNA/filtered/" )
+# cells <- CreateSeuratObject(counts = cell.data, min.cells = 3, min.features = 200)
+# cells
+CAR.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/CAR/" )
+CAR.cells <- CreateSeuratObject(counts = CAR.data, min.cells = 3, min.features = 200)
+CAR.cells2 <-AddMetaData(object = CAR.cells, metadata = "CAR", col.name = "sample")
+CAR.cells2
+TC.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/TC/" )
+TC.cells <- CreateSeuratObject(counts = TC.data, min.cells = 3, min.features = 200)
+TC.cells2 <-AddMetaData(object = TC.cells, metadata = "TC", col.name = "sample")
+TC.cells2
+GBO_CAR.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/GBO_CAR/" )
+GBO_CAR.cells <- CreateSeuratObject(counts = GBO_CAR.data, min.cells = 3, min.features = 200)
+GBO_CAR.cells2 <-AddMetaData(object = GBO_CAR.cells, metadata = "GBO_CAR", col.name = "sample")
+GBO_CAR.cells2
+GBO_TC.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/GBO_TC/" )
+GBO_TC.cells <- CreateSeuratObject(counts = GBO_TC.data, min.cells = 3, min.features = 200)
+GBO_TC.cells2 <-AddMetaData(object = GBO_TC.cells, metadata = "GBO_TC", col.name = "sample")
+GBO_TC.cells2
+
+GBO_1h.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/1hGBO/" )
+GBO_1h.cells <- CreateSeuratObject(counts = GBO_1h.data, min.cells = 3, min.features = 200)
+GBO_1h.cells2 <-AddMetaData(object = GBO_1h.cells, metadata = "GBO_1h", col.name = "sample")
+GBO_1h.cells2
+GBO_2h.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/2hGBO/" )
+GBO_2h.cells <- CreateSeuratObject(counts = GBO_2h.data, min.cells = 3, min.features = 200)
+GBO_2h.cells2 <-AddMetaData(object = GBO_2h.cells, metadata = "GBO_2h", col.name = "sample")
+GBO_2h.cells2
+GBO_3h.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/3hGBO/" )
+GBO_3h.cells <- CreateSeuratObject(counts = GBO_3h.data, min.cells = 3, min.features = 200)
+GBO_3h.cells2 <-AddMetaData(object = GBO_3h.cells, metadata = "GBO_3h", col.name = "sample")
+GBO_3h.cells2
+GBO_4h.data <- Read10X(data.dir = "/Users/unguyen/Analysis/20210908_McFly_GBO_CART/4hGBO/" )
+GBO_4h.cells <- CreateSeuratObject(counts = GBO_4h.data, min.cells = 3, min.features = 200)
+GBO_4h.cells2 <-AddMetaData(object = GBO_4h.cells, metadata = "GBO_4h", col.name = "sample")
+GBO_4h.cells2
+cells<-merge(CAR.cells2, y=c(TC.cells2, GBO_CAR.cells2, GBO_TC.cells2, GBO_1h.cells2, GBO_2h.cells2, GBO_3h.cells2, GBO_4h.cells2), project = "20210913_McFly_GBO_CART")
+cells
+#Ask Evelyn: Is there a faster way to do this step? (ie. some kind of loops that can iterate through the folder)
+```
+
+```{r}
+cells[["percent.mt"]] <- PercentageFeatureSet(cells, pattern = "^MT-")
+```
+
+```{r}
+head(cells@meta.data, 5)
+```
+
+```{r}
+VlnPlot(cells, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+```{r}
+plot1 <- FeatureScatter(cells, feature1 = "nCount_RNA", feature2 = "percent.mt")
+plot2 <- FeatureScatter(cells, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+#plot1 + plot2
+plot1
+plot2
+```
+```{r}
+#cells2 <- subset(cells, subset = nFeature_RNA > 200 & nFeature_RNA < 6000 & percent.mt<10)
+cells2 <- subset(cells, subset = nCount_RNA < 10000 & percent.mt<5)
+```
+
+```{r}
+normcells <- NormalizeData(cells2, normalization.method = "LogNormalize", scale.factor = 10000)
+
+```
+```{r}
+normcells <- FindVariableFeatures(normcells, selection.method = "mvp", mean.cutoff = c(0.2,10), dispersion.cutoff = c(0.5,20))
+# Any ways to get the mean.cutoff and dispersion.cutoff before generating the VariableFeaturePlot (next step)?? No.
+```
+```{r}
+top10 <- head(VariableFeatures(normcells), 10)
+plot1 <- VariableFeaturePlot(normcells)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+```{r}
+all.genes <- rownames(normcells)
+scalednormcells <- ScaleData(normcells, features = all.genes)
+```
+```{r}
+scalednormcells <- RunPCA(scalednormcells, features = VariableFeatures(object = scalednormcells))
+
+```
+```{r}
+print(scalednormcells[["pca"]], dims = 1:5, nfeatures = 5)
+
+```
+```{r}
+VizDimLoadings(scalednormcells, dims = 1:2, reduction = "pca")
+```
+```{r}
+DimPlot(scalednormcells, reduction = "pca")
+```
+```{r}
+DimHeatmap(scalednormcells, dims = 1, cells = 500, balanced = TRUE)
+
+```
+
+```{r}
+DimHeatmap(scalednormcells, dims = 1:20, cells = 500, balanced = TRUE)
+
+```
+```{r}
+JackStrawscalednormcells <- JackStraw(scalednormcells, num.replicate = 100)
+ScoredJackStrawscalednormcells <- ScoreJackStraw(JackStrawscalednormcells, dims = 1:12)
+```
+```{r}
+JackStrawPlot(ScoredJackStrawscalednormcells, dims = 1:12)
+ElbowPlot(ScoredJackStrawscalednormcells)
+```
+
+```{r}
+NeighborsScoredJackStrawscalednormcells <- FindNeighbors(ScoredJackStrawscalednormcells, dims = 1:9)
+ClustersScoredJackStrawscalednormcells <- FindClusters(NeighborsScoredJackStrawscalednormcells, resolution = 0.5)
+```
+```{r}
+head(Idents(ClustersScoredJackStrawscalednormcells), 5)
+
+```
+```{r}
+UMAPcells <- RunUMAP(ClustersScoredJackStrawscalednormcells, dims = 1:9)
+#Count number of cells per sample post-QC
+table(UMAPcells@meta.data$sample)
+```
+```{r}
+for (i in c(unique(UMAPcells@meta.data$sample)) ){
+  #print(i)
+  a<-DimPlot(subset(UMAPcells, subset=sample==i), reduction = "umap", label = TRUE, cols = pokepal(pokemon = 12, spread = 9), pt.size=1)
+  print(a)
+}
+```
+
+```{r}
+#DimPlot(subset(UMAPcells, subset=sample=='TC'), reduction = "umap", label = TRUE, cols = pokepal(pokemon = 12, spread = 9), pt.size=1)
+Idents(UMAPcells) <- 'sample'
+for (i in c(unique(UMAPcells@meta.data$sample)) ){
+  a<-DimPlot(UMAPcells, cells.highlight = WhichCells(UMAPcells, idents = i), cols.highlight= 'red', reduction = "umap", label = TRUE, pt.size=1, repel = T) + ggtitle(i) + theme(plot.title = element_text(hjust = 0.5))
+  print(a)
+}
+```
+
+
+```{r}
+totalplot <- DimPlot(UMAPcells, reduction = "umap", label = TRUE, pt.size=1, cols = pokepal(pokemon = 12, spread = 9))
+totalplot
+test <-DimPlot(UMAPcells, reduction = "umap", label = TRUE, cols = pokepal(pokemon = 12, spread = 9), pt.size=1, split.by = 'sample')
+test
+totalplot.bysample <-DimPlot(UMAPcells, reduction = "umap", label = TRUE, pt.size=1, group.by = 'sample', cols = pokepal(pokemon = 155, spread = 9))
+totalplot.bysample
+#saveRDS(UMAPcells, file = "/output/20210712_Sticker.rds")
+```
+
+```{r}
+VlnPlot(UMAPcells, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+```{r message=TRUE, warning=TRUE}
+UMAPcells.markers <- FindAllMarkers(UMAPcells, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+```
+
+```{r}
+UMAPcells.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 2, wt = avg_log2FC)
+```
+The resulting genes are the top differentially expressed genes.
+
+```{r}
+FeaturePlot(UMAPcells, features = c("PIK3C2B", "AC011228.2", "IL7R", "CCL5", "MKI67", "HLA-DRA", "GAP43", "GFAP","LTB","GZMA", "GDF15", "VGF", "CXCL10", "CXCL9", "TOP2A", "CENPF", "CSF2", "LTA", "EGFR"))
+```
+
+
+```{r}
+UMAPcells.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+DoHeatmap(UMAPcells, features = top10$gene) + NoLegend()
+```
+
+```{r}
+FindClustersUMAPcells <- FindClusters(UMAPcells, resolution = c(0.4,0.5,0.6,0.7,0.8,0.9,1))
+
+```
+
+```{r}
+#clustree(FindClustersUMAPcells, length(1), prefix = "RNA_snn_res.")
+clustree(FindClustersUMAPcells, prefix = "RNA_snn_res.")
+```
+
+```{r}
+immune_cell_bysamplename <- subset(UMAPcells, idents = c("CAR","TC","GBO_CAR","GBO_TC"))
+immune_cell <- subset(UMAPcells, idents = c(1,2,4,8))
+AllCAR <- subset(immune_cell, idents = c("CAR","GBO_CAR"))
+
+# immune_cell <- subset(UMAPcells, idents = c(1,4), invert = TRUE)
+immune_cell <- FindVariableFeatures(immune_cell, selection.method = "mvp", mean.cutoff = c(0.2,10), dispersion.cutoff = c(0.5,20))
+top10 <- head(VariableFeatures(immune_cell), 10)
+plot1 <- VariableFeaturePlot(immune_cell)
+plot2 <- LabelPoints(plot = plot1, points = top10, repel = TRUE)
+plot2
+```
+
+
+```{r}
+all.genes_immunecells <- rownames(immune_cell)
+scaledimmunecells <- ScaleData(immune_cell, features = all.genes_immunecells)
+immune_cell_PCA <- RunPCA(immune_cell, features = VariableFeatures(object = immune_cell))
+DimPlot(immune_cell_PCA, reduction = "pca")
+```
+
+
+```{r}
+Idents(immune_cell) <- 'sample'
+VlnPlot(immune_cell, features = c("nFeature_RNA", "nCount_RNA"), ncol = 3) +
+VlnPlot(immune_cell, features = c("percent.mt"), y.max = 50)
+```
+
+```{r}
+DimHeatmap(immune_cell_PCA, dims = 1:20, cells = 500, balanced = TRUE)
+```
+
+```{r}
+JackStrawscaledimmunePCA <- JackStraw(immune_cell_PCA, num.replicate = 100)
+ScoredJackStrawscaledimmunePCA <- ScoreJackStraw(JackStrawscaledimmunePCA, dims = 1:10)
+```
+
+
+```{r}
+JackStrawPlot(ScoredJackStrawscaledimmunePCA, dims = 1:10)
+ElbowPlot(ScoredJackStrawscaledimmunePCA)
+```
+
+```{r}
+NeighborsScoredJackStrawimmune <- FindNeighbors(ScoredJackStrawscaledimmunePCA, dims = 1:9)
+ClustersScoredJackStrawimmune <- FindClusters(NeighborsScoredJackStrawimmune, resolution = 0.5)
+```
+
+```{r}
+UMAPimmune <- RunUMAP(ClustersScoredJackStrawimmune, dims = 1:9)
+```
+
+
+```{r}
+totalplotimmune <- DimPlot(UMAPimmune, reduction = "umap", label = TRUE, pt.size=2, cols = pnw_palette("Bay",7,type="continuous"))
+totalplotimmune
+totalplotimmune.bysample <-DimPlot(UMAPimmune, reduction = "umap", label = TRUE, pt.size=2, group.by = 'sample', cols = pnw_palette("Sunset2",4,type="discrete"))
+totalplotimmune.bysample
+table(UMAPimmune@meta.data$sample)
+```
+```{r}
+Idents(UMAPimmune) <- 'sample'
+for (i in c(unique(UMAPimmune@meta.data$sample)) ){
+  a<-DimPlot(UMAPimmune, cells.highlight = WhichCells(UMAPimmune, idents = i), cols.highlight= 'red', reduction = "umap", label = TRUE, pt.size=1, repel = T) + ggtitle(i) + theme(plot.title = element_text(hjust = 0.5))
+  print(a)
+}
+```
+
+```{r}
+UMAPimmune.markers <- FindAllMarkers(UMAPimmune, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+UMAPimmune.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 2, wt = avg_log2FC)
+```
+
+```{r}
+FeaturePlot(UMAPimmune, features = c("IL7R","CCL5","MAL","IL4R","TUBA1B","MKI67","FAM111B", "RRM2", "CSF2","CCL1","PDCD1", "ICOS", "CTLA4", "TIGIT", "LAG3", "HAVCR2","CD4", "CD8A", "CD8B", "CD3E", "CD3D"))
+```
+
+```{r}
+UMAPimmune.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10
+```
+
+
+```{r}
+Idents(UMAPimmune) <- 'seurat_clusters'
+DoHeatmap(UMAPimmune, features = top10$gene, group.colors= pnw_palette("Bay",7,type="continuous")) + NoLegend()
+```
+
+```{r message=FALSE, warning=FALSE}
+FindClustersUMAPimmune <- FindClusters(UMAPimmune, resolution = c(0.4,0.5,0.6,0.7,0.8,0.9,1))
+```
+```{r}
+Idents(UMAPimmune) <- 'sample'
+for (i in c(unique(UMAPimmune@meta.data$sample)) ){
+  #print(i)
+  a<-DimPlot(UMAPimmune, cells.highlight = WhichCells(UMAPcells, idents = i), cols.highlight= 'red', reduction = "umap", label = TRUE, pt.size=1, repel = T) + ggtitle(i) + theme(plot.title = element_text(hjust = 0.5))
+  print(a)
+}
+```
+
+
+```{r}
+VlnPlot(UMAPimmune, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+```
+
+```{r}
+Suva_modules <- read.table('/Users/unguyen/Analysis/GBM_Scores/IDHwt.GBM.MetaModules.tsv', header = TRUE)
+S_MES1_features <- list(c(Suva_modules$MESlike1))
+S_MES2_features <- list(c(Suva_modules$MESlike2))
+S_AC_features <- list(c(Suva_modules$AClike))
+S_OPC_features <- list(c(Suva_modules$OPClike))
+S_NPC1_features <- list(c(Suva_modules$NPClike1))
+S_NPC2_features <- list(c(Suva_modules$NPClike2))
+
+Charlie_modules <- read.table('/Users/unguyen/Analysis/GBM_Scores/signatures_top50.csv', sep = ",", header = TRUE)
+colnames(Charlie_modules) <- c("Neuro", "Mes1", "HK", "Hypoxia", "Astro", "Oligo", "APC", "OPC", "Mes2", "CC1", "CC2")
+H <-read.table('/Users/unguyen/Analysis/20210908_McFly_GBO_CART/GBM_Scores/H.csv',sep = ",", header = TRUE, row.names = 1)
+C_Neuro_features <- list(c(Charlie_modules$Neuro))
+C_Mes1_features <- list(c(Charlie_modules$Mes1))
+C_HK_features <- list(c(Charlie_modules$HK))
+C_Hypoxia_features <- list(c(Charlie_modules$Hypoxia))
+C_Astro_features <- list(c(Charlie_modules$Astro))
+C_Oligo_features <- list(c(Charlie_modules$Oligo))
+C_APC_features <- list(c(Charlie_modules$APC))
+C_OPC_features <- list(c(Charlie_modules$OPC))
+C_Mes2_features <- list(c(Charlie_modules$Mes2))
+C_CC1_features <- list(c(Charlie_modules$CC1))
+C_CC2_features <- list(c(Charlie_modules$CC2))
+```
+
+```{r}
+Idents(UMAPcells) <- 'seurat_clusters'
+GBO_cell <- subset(UMAPcells, idents = c(7,0,3,5,6))
+```
+```{r}
+GBO_cell <- AddModuleScore(
+  object = GBO_cell,
+  features = c(S_MES2_features,S_MES1_features,S_AC_features,S_OPC_features,S_NPC1_features,S_NPC2_features),
+  nbin=30,
+  name = c('Suva_MES2','Suva_MES1', 'Suva_AC','Suva_OPC','Suva_NPC1','Suva_NPC2'))
+
+FeaturePlot(GBO_cell, features = c('Suva_MES21', 'Suva_MES12', 'Suva_AC3', 'Suva_OPC4', 'Suva_NPC15', 'Suva_NPC26', 'EGFR'), cols = c('lightblue','red'))
+```
+
+```{r}
+add_charlie_scores <- function(seurat_obj, charlie_scores, normalize = TRUE, norm_by){
+  charlie_types <- c('Neuro','Mes1','HK','Hypoxia','Astro','Oligo','APC','OPC','Mes2','CC1','CC2')
+  for(c_type in charlie_types){
+    seurat_obj@meta.data[[c_type]] <- charlie_scores[,c_type]
+  }
+  if(normalize){
+      if(norm_by == 'count'){
+        norm_factor = log(seurat_obj@meta.data$nCount_RNA)
+      }
+      else if(norm_by == 'feature'){
+        norm_factor = log(seurat_obj@meta.data$nFeature_RNA)
+      }
+      for(c_type in charlie_types){
+        seurat_obj@meta.data[[paste0(c_type,'.norm.',norm_by)]] <- charlie_scores[,c_type]/norm_factor
+      }
+    }
+  return(seurat_obj)
+}
+```
+
+
+```{r}
+GBO_cell <- AddModuleScore(
+  object = GBO_cell,
+  features = c(C_Neuro_features,C_Mes1_features,C_Mes2_features,C_HK_features,C_Hypoxia_features,C_Astro_features,C_Oligo_features,C_APC_features,C_OPC_features,C_CC1_features,C_CC2_features),
+  nbin=30,
+  name = c('Charlie_Neuro','Charlie_Mes1', 'Charlie_HK', 'Charlie_Hypoxia', 'Charlie_Astro', 'Charlie_Oligo','Charlie_APC', 'Charlie_OPC', 'Charlie_Mes2', 'Charlie_CC1', 'Charlie_CC2'))
+```
+```{r}
+FeaturePlot(GBO_cell, features = c('Charlie_Neuro1', 'Charlie_Mes12', 'Charlie_HK3', 'Charlie_Hypoxia4','Charlie_Astro5', 'Charlie_Oligo6', 'Charlie_APC7', 'Charlie_OPC8', 'Charlie_Mes29', 'Charlie_CC110', 'Charlie_CC211'), cols = c('lightblue','red'), keep.scale = "all")
+```
+
+
+```{r}
+# Counts_23_combined <- GetAssayData(MGG23.combined, slot = 'scale.data')
+# Counts_23_combined_unscaled <- GetAssayData(MGG23.combined, slot = 'data')
+# MGG23.idx <- intersect(row.names(Counts_23_combined_unscaled), row.names(t(H)))
+# MGG23.W <- lsfit(t(H[MGG23.idx]),t(t(Counts_23_combined_unscaled[MGG23.idx,])),intercept = FALSE)
+# MGG23.W.scores <- t(MGG23.W$coefficients)
+# MGG23.combined <- add_charlie_scores(MGG23.combined, MGG23.W.scores)
+# MGG23.combined <- AddModuleScore(object = MGG23.combined, features = c(S_MES1_features, S_MES2_features, S_AC_features,
+#                               S_OPC_features, S_NPC1_features, S_NPC2_features), name = c('MES1', 'MES2', 'AC', 'OPC','NPC1','NPC2'), nbin = 30)
+# MGG23.combined@meta.data$suva.type <- unlist(get_suva_ident(MGG23.combined))
+# MGG23.combined@meta.data$W.charlie.type <- unlist(get_W_charlie_ident(MGG23.combined))
+
+Counts_GBO <- GetAssayData(GBO_cell, slot = 'scale.data')
+Counts_GBO_unscaled <- GetAssayData(GBO_cell, slot = 'data')
+GBO.idx <- intersect(row.names(Counts_GBO_unscaled), row.names(H))
+GBO.W <- lsfit(H[GBO.idx,],Counts_GBO_unscaled[GBO.idx,], intercept = FALSE)
+GBO.W.scores <- t(GBO.W$coefficients)
+GBO_Charlie2 <- add_charlie_scores(GBO_cell, GBO.W.scores, norm_by = "count")
+```
+
+```{r}
+FeaturePlot(GBO_Charlie2, features = c('Neuro.norm.count', 'Mes1.norm.count', 'HK.norm.count', 'Hypoxia.norm.count','Astro.norm.count', 'Oligo.norm.count', 'APC.norm.count', 'OPC.norm.count', 'Mes2.norm.count', 'CC1.norm.count', 'CC2.norm.count'), cols = c('lightblue','red'), keep.scale = "all")
+
+```
+##Apoptosis scoring
+```{r}
+Hallmark_apoptosis_module <- read.gmt('/Users/unguyen/Analysis/Genesets/Hallmark_apoptosis_geneset.gmt')
+Hallmark_apoptosis_features <- list(c(Hallmark_apoptosis_module$gene))
+KEGG_apoptosis_module  <- read.gmt('/Users/unguyen/Analysis/Genesets/KEGG_apoptosis_geneset.gmt')
+KEGG_apoptosis_features <- list(c(KEGG_apoptosis_module$gene))
+```
+```{r}
+GBO_cell <- AddModuleScore(
+  object = GBO_cell,
+  features = c(Hallmark_apoptosis_features,KEGG_apoptosis_features),
+  nbin=30,
+  name = c('Hallmark_apoptosis','KEGG_apoptosis'))
+
+FeaturePlot(GBO_cell, features = c('Hallmark_apoptosis1','KEGG_apoptosis2'), cols = c('lightblue','red'))
+```
+```{r}
+Idents(GBO_cell) <- 'sample'
+VlnPlot(GBO_cell, features = c('Hallmark_apoptosis1'), ncol = 2, idents = c("GBO_CAR","GBO_TC","GBO_1h","GBO_2h","GBO_3h","GBO_4h")) + stat_summary(fun = "mean", geom = "crossbar", width = 0.75,colour = "black") 
++ (VlnPlot(GBO_cell, features = c('KEGG_apoptosis2'), idents = c("GBO_CAR","GBO_TC","GBO_1h","GBO_2h","GBO_3h","GBO_4h")) + stat_summary(fun = "mean", geom = "crossbar", width = 0.75,colour = "black"))
+```
+```{r}
+#DimPlot(UMAPcells, cells.highlight = WhichCells(UMAPcells, idents = i), cols.highlight= 'red', reduction = "umap", label = TRUE, pt.size=1, repel = T) + ggtitle(i) + theme(plot.title = element_text(hjust = 0.5))
+DimPlot(GBO_cell, cells.highlight = WhichCells('KEGG_apoptosis2'>0.1), cols.highlight= 'red', reduction = "umap", label = TRUE, pt.size=1, repel = T) + theme(plot.title = element_text(hjust = 0.5))
+```
+
+#TC EXHAUSTION SCORING
+```{r}
+TC_Exhaustion_features <- list(c('PDCD1','HAVCR2','LAG3','TIGIT','KLRG1','CD38','TOX','TBX21','EOMES','CD244','TNFRSF9','GZMB','PRF1'))
+#Signature from: https://ash.silverchair-cdn.com/ash/content_public/journal/bloodadvances/jam/10.1182_bloodadvances.2021004335/1/bloodadvances.2021004335-s01.pdf?Expires=1636700955&Signature=Omtqlwd2qFPeyIqPvZ8lLVBamm28x31jxVwEb8wxqwYDZdqLB4lQdtFQCsXe~J1y~Uux1ORNnbHQ2tPcaRCAVF4L7EW6mN5Ld5JIf4fPm8aGHEyCtGwew9fA-3wFsnLgKJVo8Ffb4zvzRBeIf~ESlNyeF-9fvGLzsUPO~wE5HQvbEO~~QDQ0Em6GQOproMne25KetlSwH4VxypvybKxeLIRtQtAdB4MXq86zB~yp-nQOGtVyQeB4p8-WGsd~iAVJCxh7ywwCMeqwJEmGItIfiysq6yxDMURWOAS7lxSlv9fk3XkPgCl8L37dqOWboDzeG3N0~8Ek~w6IpmovOd5ECg__&Key-Pair-Id=APKAIE5G5CRDK6RD3PGA
+
+UMAPimmune <- AddModuleScore(
+  object = UMAPimmune,
+  features = c(TC_Exhaustion_features),
+  nbin=30,
+  name = c('T cell exhaustion'))
+
+FeaturePlot(UMAPimmune, features = c('T.cell.exhaustion1'), cols = c('lightblue','red'))
+```
+
+
+##DOROTHEA
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("dorothea")
+library("dorothea")
+```
+
+```{r}
+## We read Dorothea Regulons for Human:
+dorothea_regulon_human <- get(data("dorothea_hs", package = "dorothea"))
+
+## We obtain the regulons based on interactions with confidence level A, B and C
+regulon <- dorothea_regulon_human %>%
+    dplyr::filter(confidence %in% c("A","B","C"))
+
+## We compute Viper Scores 
+immune_cell_Viper <- run_viper(immune_cell, regulon,
+                  options = list(method = "scale", minsize = 4, 
+                                 eset.filter = FALSE, cores = 1, 
+                                 verbose = FALSE))
+
+GBO_cell_Viper <- run_viper(GBO_cell, regulon,
+                  options = list(method = "scale", minsize = 4, 
+                                 eset.filter = FALSE, cores = 1, 
+                                 verbose = FALSE))
+
+AllCAR_Viper <- run_viper(AllCAR, regulon,
+                  options = list(method = "scale", minsize = 4, 
+                                 eset.filter = FALSE, cores = 1, 
+                                 verbose = FALSE))
+```
+
+```{r}
+## We compute the Nearest Neighbours to perform cluster using TF activity scores
+DefaultAssay(object = immune_cell_Viper) <- "dorothea"
+immune_cell_Viper <- ScaleData(immune_cell_Viper)
+immune_cell_Viper <- RunPCA(immune_cell_Viper, features = rownames(immune_cell_Viper), verbose = FALSE)
+immune_cell_Viper <- FindNeighbors(immune_cell_Viper, dims = 1:10, verbose = FALSE)
+immune_cell_Viper <- FindClusters(immune_cell_Viper, resolution = 0.5, verbose = FALSE)
+
+immune_cell_Viper <- RunUMAP(immune_cell_Viper, dims = 1:10, umap.method = "uwot", metric = "cosine")
+
+immune_cell_Viper.markers <- FindAllMarkers(immune_cell_Viper, only.pos = TRUE, min.pct = 0.25, 
+                               logfc.threshold = 0.25, verbose = FALSE)
+
+DefaultAssay(object = GBO_cell_Viper) <- "dorothea"
+GBO_cell_Viper <- ScaleData(GBO_cell_Viper)
+GBO_cell_Viper <- RunPCA(GBO_cell_Viper, features = rownames(GBO_cell_Viper), verbose = FALSE)
+GBO_cell_Viper <- FindNeighbors(GBO_cell_Viper, dims = 1:10, verbose = FALSE)
+GBO_cell_Viper <- FindClusters(GBO_cell_Viper, resolution = 0.5, verbose = FALSE)
+
+GBO_cell_Viper <- RunUMAP(GBO_cell_Viper, dims = 1:10, umap.method = "uwot", metric = "cosine")
+
+GBO_cell_Viper.markers <- FindAllMarkers(GBO_cell_Viper, only.pos = TRUE, min.pct = 0.25, 
+                               logfc.threshold = 0.25, verbose = FALSE)
+
+DefaultAssay(object = AllCAR_Viper) <- "dorothea"
+AllCAR_Viper <- ScaleData(AllCAR_Viper)
+AllCAR_Viper <- RunPCA(AllCAR_Viper, features = rownames(AllCAR_Viper), verbose = FALSE)
+AllCAR_Viper <- FindNeighbors(AllCAR_Viper, dims = 1:10, verbose = FALSE)
+AllCAR_Viper <- FindClusters(AllCAR_Viper, resolution = 0.5, verbose = FALSE)
+
+AllCAR_Viper <- RunUMAP(AllCAR_Viper, dims = 1:10, umap.method = "uwot", metric = "cosine")
+
+AllCAR_Viper.markers <- FindAllMarkers(AllCAR_Viper, only.pos = TRUE, min.pct = 0.25, 
+                               logfc.threshold = 0.25, verbose = FALSE)
+```
+```{r}
+ElbowPlot(immune_cell_Viper)
+ElbowPlot(GBO_cell_Viper)
+ElbowPlot(AllCAR_Viper)
+```
+
+
+```{r}
+Idents(immune_cell_Viper) <- 'dorothea_snn_res.0.5'
+Idents(GBO_cell_Viper) <- 'dorothea_snn_res.0.5'
+Idents(AllCAR_Viper) <- 'dorothea_snn_res.0.5'
+
+DimPlot(immune_cell_Viper, reduction = "umap", label = TRUE, pt.size = 1.5, cols = pnw_palette("Sunset2",4,type="discrete"), label.size = 8) + NoLegend()
+DimPlot(GBO_cell_Viper, reduction = "umap", label = TRUE, pt.size = 1.5, cols = pnw_palette("Bay",7,type="continuous"), label.size = 8) + NoLegend()
+DimPlot(AllCAR_Viper, reduction = "umap", label = TRUE, pt.size = 1.5, cols = pnw_palette("Bay",4,type="discrete"), label.size = 8) + NoLegend()
+```
+```{r}
+Idents(immune_cell_Viper) <- 'sample'
+for (i in c(unique(immune_cell_Viper@meta.data$sample)) ){
+  #print(i)
+  a<-DimPlot(immune_cell_Viper, cells.highlight = WhichCells(immune_cell_Viper, idents = i), cols.highlight= 'black', reduction = "umap", label = FALSE, pt.size=1, repel = T) + ggtitle(i) + theme(plot.title = element_text(hjust = 0.5))
+  print(a)
+}
+```
+
+IMMUNE CELLS
+```{r}
+## We transform Viper scores, scaled by seurat, into a data frame to better handling the results
+immune_cell_Viper_scores_df <- GetAssayData(immune_cell_Viper, slot = "scale.data", 
+                                    assay = "dorothea") %>%
+  data.frame(check.names = F) %>%
+  t()
+
+## We create a data frame containing the cells and their clusters
+ImmuneCellsClusters <- data.frame(cell = names(Idents(immune_cell_Viper)), 
+                            cell_type = as.character(Idents(immune_cell_Viper)),
+                            check.names = F)
+
+## We create a data frame with the Viper score per cell and its clusters
+immune_cell_Viper_scores_clusters <- immune_cell_Viper_scores_df  %>%
+  data.frame() %>% 
+  rownames_to_column("cell") %>%
+  gather(tf, activity, -cell) %>%
+  inner_join(ImmuneCellsClusters)
+
+## We summarize the Viper scores by cellpopulation
+summarized_immune_cell_Viper_scores <- immune_cell_Viper_scores_clusters %>% 
+  group_by(tf, cell_type) %>%
+  summarise(avg = mean(activity),
+            std = sd(activity))
+```
+
+```{r} 
+## We select the 20 most variable TFs. (20*4 populations = 80)
+immune_highly_variable_tfs <- summarized_immune_cell_Viper_scores %>%
+  group_by(tf) %>%
+  mutate(var = var(avg))  %>%
+  ungroup() %>%
+  top_n(80, var) %>%
+  distinct(tf)
+
+## We prepare the data for the plot
+summarized_immune_cell_Viper_scores_df <- summarized_immune_cell_Viper_scores %>%
+  semi_join(immune_highly_variable_tfs, by = "tf") %>%
+  dplyr::select(-std) %>%   
+  spread(tf, avg) %>%
+  data.frame(row.names = 1, check.names = FALSE) 
+
+palette_length = 100
+my_color = colorRampPalette(c("Darkblue", "white","red"))(palette_length)
+
+immune_my_breaks <- c(seq(min(summarized_immune_cell_Viper_scores_df), 0, 
+                   length.out=ceiling(palette_length/2) + 1),
+               seq(max(summarized_immune_cell_Viper_scores_df)/palette_length, 
+                   max(summarized_immune_cell_Viper_scores_df), 
+                   length.out=floor(palette_length/2)))
+
+immune_viper_hmap <- pheatmap(t(summarized_immune_cell_Viper_scores_df),fontsize=14, 
+                       fontsize_row = 10, 
+                       color=my_color, breaks = my_breaks, 
+                       main = "DoRothEA (Immune cells)", angle_col = 45,
+                       treeheight_col = 0,  border_color = NA)
+```
+```{r}
+Idents(immune_cell_Viper) <- 'sample'
+VlnPlot(immune_cell_Viper, features = c("NFATC1", "NFATC2", "NFATC3","NFATC4","NFAT5", "NFKB1","NFKB2","JUN"))
+```
+
+GBO CANCER CELLS
+```{r}
+Idents(GBO_cell_Viper) <- 'sample'
+for (i in c(unique(GBO_cell_Viper@meta.data$sample)) ){
+  #print(i)
+  a<-DimPlot(GBO_cell_Viper, cells.highlight = WhichCells(GBO_cell_Viper, idents = i), cols.highlight= 'red', reduction = "umap", label = F, pt.size=1, repel = T) + ggtitle(i) + theme(plot.title = element_text(hjust = 0.5))
+  print(a)
+}
+```
+
+```{r}
+## We transform Viper scores, scaled by seurat, into a data frame to better handling the results
+GBO_cell_Viper_scores_df <- GetAssayData(GBO_cell_Viper, slot = "scale.data", 
+                                    assay = "dorothea") %>%
+  data.frame(check.names = F) %>%
+  t()
+
+## We create a data frame containing the cells and their clusters
+GBOCellsClusters <- data.frame(cell = names(Idents(GBO_cell_Viper)), 
+                            cell_type = as.character(Idents(GBO_cell_Viper)),
+                            check.names = F)
+
+## We create a data frame with the Viper score per cell and its clusters
+GBO_cell_Viper_scores_clusters <- GBO_cell_Viper_scores_df  %>%
+  data.frame() %>% 
+  rownames_to_column("cell") %>%
+  gather(tf, activity, -cell) %>%
+  inner_join(GBOCellsClusters)
+
+## We summarize the Viper scores by cellpopulation
+summarized_GBO_cell_Viper_scores <- GBO_cell_Viper_scores_clusters %>% 
+  group_by(tf, cell_type) %>%
+  summarise(avg = mean(activity),
+            std = sd(activity))
+```
+
+```{r} 
+## We select the 20 most variable TFs. (20*6 populations = 120)
+GBO_highly_variable_tfs <- summarized_GBO_cell_Viper_scores %>%
+  group_by(tf) %>%
+  mutate(var = var(avg))  %>%
+  ungroup() %>%
+  top_n(120, var) %>%
+  distinct(tf)
+
+## We prepare the data for the plot
+summarized_GBO_cell_Viper_scores_df <- summarized_GBO_cell_Viper_scores %>%
+  semi_join(GBO_highly_variable_tfs, by = "tf") %>%
+  dplyr::select(-std) %>%   
+  spread(tf, avg) %>%
+  data.frame(row.names = 1, check.names = FALSE) 
+
+palette_length = 100
+my_color = colorRampPalette(c("Darkblue", "white","red"))(palette_length)
+
+GBO_my_breaks <- c(seq(min(summarized_GBO_cell_Viper_scores_df), 0, 
+                   length.out=ceiling(palette_length/2) + 1),
+               seq(max(summarized_GBO_cell_Viper_scores_df)/palette_length, 
+                   max(summarized_GBO_cell_Viper_scores_df), 
+                   length.out=floor(palette_length/2)))
+
+GBO_viper_hmap <- pheatmap(t(summarized_GBO_cell_Viper_scores_df),fontsize=14, 
+                       fontsize_row = 10, 
+                       color=my_color, breaks = my_breaks, 
+                       main = "DoRothEA (GBO cancer cells)", angle_col = 45,
+                       treeheight_col = 0,  border_color = NA)
+```
+
+CAR
+```{r}
+Idents(AllCAR_Viper) <- 'sample'
+for (i in c(unique(AllCAR_Viper@meta.data$sample)) ){
+  #print(i)
+  a<-DimPlot(AllCAR_Viper, cells.highlight = WhichCells(AllCAR_Viper, idents = i), cols.highlight= 'red', reduction = "umap", label = F, pt.size=1, repel = T) + ggtitle(i) + theme(plot.title = element_text(hjust = 0.5))
+  print(a)
+}
+```
+
+```{r}
+#Idents(AllCAR_Viper) <- 'dorothea_snn_res.0.5'
+Idents(AllCAR_Viper) <- 'sample'
+
+## We transform Viper scores, scaled by seurat, into a data frame to better handling the results
+AllCAR_Viper_scores_df <- GetAssayData(AllCAR_Viper, slot = "scale.data", 
+                                    assay = "dorothea") %>%
+  data.frame(check.names = F) %>%
+  t()
+
+## We create a data frame containing the cells and their clusters
+AllCARClusters <- data.frame(cell = names(Idents(AllCAR_Viper)), 
+                            cell_type = as.character(Idents(AllCAR_Viper)),
+                            check.names = F)
+
+## We create a data frame with the Viper score per cell and its clusters
+AllCAR_Viper_scores_clusters <- AllCAR_Viper_scores_df  %>%
+  data.frame() %>% 
+  rownames_to_column("cell") %>%
+  gather(tf, activity, -cell) %>%
+  inner_join(AllCARClusters)
+
+## We summarize the Viper scores by cellpopulation
+summarized_AllCAR_Viper_scores <- AllCAR_Viper_scores_clusters %>% 
+  group_by(tf, cell_type) %>%
+  summarise(avg = mean(activity),
+            std = sd(activity))
+```
+
+```{r} 
+## We select the 20 most variable TFs. (20*4 populations = 80) (20*2 samples=40)
+AllCAR_highly_variable_tfs <- summarized_AllCAR_Viper_scores %>%
+  group_by(tf) %>%
+  mutate(var = var(avg))  %>%
+  ungroup() %>%
+  top_n(40, var) %>%
+  distinct(tf)
+
+## We prepare the data for the plot
+summarized_AllCAR_Viper_scores_df <- summarized_AllCAR_Viper_scores %>%
+  semi_join(AllCAR_highly_variable_tfs, by = "tf") %>%
+  dplyr::select(-std) %>%   
+  spread(tf, avg) %>%
+  data.frame(row.names = 1, check.names = FALSE) 
+
+palette_length = 100
+my_color = colorRampPalette(c("Darkblue", "white","red"))(palette_length)
+
+AllCAR_my_breaks <- c(seq(min(summarized_AllCAR_Viper_scores_df), 0, 
+                   length.out=ceiling(palette_length/2) + 1),
+               seq(max(summarized_AllCAR_Viper_scores_df)/palette_length, 
+                   max(summarized_AllCAR_Viper_scores_df), 
+                   length.out=floor(palette_length/2)))
+
+AllCAR_viper_hmap <- pheatmap(t(summarized_AllCAR_Viper_scores_df),fontsize=14, 
+                       fontsize_row = 10, 
+                       color=my_color, breaks = my_breaks, 
+                       main = "DoRothEA (All CAR-T cells)", angle_col = 45,
+                       treeheight_col = 0,  border_color = NA)
+```
+```{r}
+Idents(AllCAR_Viper) <- 'sample'
+VlnPlot(AllCAR_Viper, features = c("NFATC1", "NFATC2", "NFATC3","NFATC4","NFAT5", "NFKB1","NFKB2","JUN"))
+        #, ncol = 3) +
+#VlnPlot(immune_cell, features = c("percent.mt"), y.max = 50)
+```
+```{r}
+## Pick the TFs I want
+#AllCAR_highly_variable_tfs <- summarized_AllCAR_Viper_scores %>%
+AllCAR_TC_activation_tfs <- summarized_AllCAR_Viper_scores %>%
+  group_by(tf) %>%
+  mutate(var = var(avg))  %>%
+  ungroup() %>%
+  #top_n(40, var) %>%
+  distinct(tf) %>%
+  summarized_AllCAR_Viper_scores[,c("NFKB1","NFKB2","NFATC1","NFATC2","JUN")]
+
+## We prepare the data for the plot
+summarized_AllCAR_Viper_scores_df <- summarized_AllCAR_Viper_scores %>%
+  semi_join(AllCAR_highly_variable_tfs, by = "tf") %>%
+  dplyr::select(-std) %>%   
+  spread(tf, avg) %>%
+  data.frame(row.names = 1, check.names = FALSE) 
+
+palette_length = 100
+my_color = colorRampPalette(c("Darkblue", "white","red"))(palette_length)
+
+AllCAR_my_breaks <- c(seq(min(summarized_AllCAR_Viper_scores_df), 0, 
+                   length.out=ceiling(palette_length/2) + 1),
+               seq(max(summarized_AllCAR_Viper_scores_df)/palette_length, 
+                   max(summarized_AllCAR_Viper_scores_df), 
+                   length.out=floor(palette_length/2)))
+
+AllCAR_viper_hmap <- pheatmap(t(summarized_AllCAR_Viper_scores_df),fontsize=14, 
+                       fontsize_row = 10, 
+                       color=my_color, breaks = my_breaks, 
+                       main = "DoRothEA (All CAR-T cells)", angle_col = 45,
+                       treeheight_col = 0,  border_color = NA)
+```
+
+##GSEA
+```{r}
+BiocManager::install("clusterProfiler", version = "3.13")
+BiocManager::install("pathview")
+BiocManager::install("enrichplot")
+install.packages("msigdbr")
+library(clusterProfiler)
+library(enrichplot)
+library(msigdbr)
+library(fgsea)
+```
+
+```{r}
+#KEGG apoptosis: https://www.gsea-msigdb.org/gsea/msigdb/cards/KEGG_APOPTOSIS
+#Hallmark apoptosis:https://www.gsea-msigdb.org/gsea/msigdb/cards/HALLMARK_APOPTOSIS
+hallmark_df<- msigdbr(species = "Homo sapiens", category = "H")
+```
+
+```{r} 
+##GSEA GBO-CAR cancer cells vs. GBO alone
+#Generate gene list
+Idents(GBO_cell) <- 'sample'
+GBO.markers <- FindMarkers(GBO_cell, ident.1= c("GBO_CAR"), ident.2= c("GBO_TC","GBO_1h","GBO_2h","GBO_3h","GBO_4h"),only.pos = F, min.pct = 0.25, logfc.threshold = 0.25, )
+GBO.markers_significant <- subset(GBO.markers, p_val_adj <0.05,select=c(p_val_adj,avg_log2FC))
+#original_gene_list <- GBO.markers_significant$avg_log2FC
+#names(original_gene_list) <- GBO.markers_significant[,1]
+```
+
+```{r}
+# Convert gene IDs for gseKEGG function. We will lose some genes here because not all IDs will be converted
+ids<-bitr(rownames(GBO.markers_significant), fromType = "SYMBOL", toType = "ENTREZID", OrgDb="org.Hs.eg.db")
+# remove duplicate IDS
+dedup_ids = ids[!duplicated(ids[c("SYMBOL")]),]
+
+# Create a new dataframe df2 which has only the genes which were successfully mapped using the bitr function above
+#df2 = GBO.markers_significant[GBO.markers_significant$X %in% dedup_ids$SYMBOL,]
+df2= GBO.markers_significant[c(rownames(GBO.markers_significant)) %in% dedup_ids$SYMBOL,]
+# Create a new column in df2 with the corresponding ENTREZ IDs
+df2$Y = dedup_ids$ENTREZID
+
+# Create a vector of the gene universe
+GBO_kegg_gene_list <- df2$avg_log2FC
+# Name vector with ENTREZ ids
+names(GBO_kegg_gene_list) <- df2$Y
+
+# omit any NA values 
+GBO_kegg_gene_list<-na.omit(GBO_kegg_gene_list)
+# sort the list in decreasing order (required for clusterProfiler)
+GBO_kegg_gene_list = sort(GBO_kegg_gene_list, decreasing = TRUE)
+```
+
+```{r}
+kegg_organism = "hsa"
+GBO_kk2 <- gseKEGG(geneList     = GBO_kegg_gene_list,
+               organism     = kegg_organism,
+               nPerm        = 10000,
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "bonferroni",
+               keyType       = "kegg")
+```
+
+```{r}
+head(GBO_kk2)
+GBO_kk2@result
+```
+
+```{r}
+dotplot(GBO_kk2, showCategory = 10, title = "Enriched Pathways" , split=".sign") + facet_grid(.~.sign)
+#emapplot(GBO_kk2)
+cnetplot(GBO_kk2, categorySize="p_val_adj", node_label="gene")
+ridgeplot(GBO_kk2) + labs(x = "enrichment distribution")
+gseaplot(GBO_kk2, by = "all", title = GBO_kk2$Description[1], geneSetID = 1)
+gseaplot2(GBO_kk2, title = GBO_kk2$Description[1], geneSetID = 1:3)
+upsetplot(GBO_kk2)
+```
+
+```{r}
+library("pathview")
+hsa05169 <- pathview(gene.data  = GBO_kegg_gene_list,
+                     pathway.id = "hsa05169",
+                     species    = "hsa",
+                     limit      = list(gene=max(abs(GBO_kegg_gene_list)), cpd=1),
+                     low = "blue",
+                     mid = "gray",
+                     high = "red")
+
+hsa04612 <- pathview(gene.data  = GBO_kegg_gene_list,
+                     pathway.id = "hsa04612",
+                     species    = "hsa",
+                     limit      = list(gene=max(abs(GBO_kegg_gene_list)), cpd=1),
+                     low = "blue",
+                     mid = "gray",
+                     high = "red")
+
+hsa04668 <- pathview(gene.data  = GBO_kegg_gene_list,
+                     pathway.id = "hsa04668",
+                     species    = "hsa",
+                     limit      = list(gene=max(abs(GBO_kegg_gene_list)), cpd=1),
+                     low = "blue",
+                     mid = "gray",
+                     high = "red")
+```
+
+#ARBOL: ITERATIVE CLUSTERING
+```{r}
+devtools::install_github('jo-m-lab/ARBOL')
+library(Seurat)
+library(ARBOL)
+```
+
+#NICHENET: intercellular interactions
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("limma")
+devtools::install_github("saeyslab/nichenetr")
+library(nichenetr)
+```
+
+```{r}
+ligand_target_matrix = readRDS(url("https://zenodo.org/record/3260758/files/ligand_target_matrix.rds"))
+lr_network = readRDS(url("https://zenodo.org/record/3260758/files/lr_network.rds"))
+weighted_networks = readRDS(url("https://zenodo.org/record/3260758/files/weighted_networks.rds"))
+weighted_networks_lr = weighted_networks$lr_sig %>% inner_join(lr_network %>% distinct(from,to), by = c("from","to"))
+```
+
+
+```{r}
+UMAP_GBO_CAR <- subset(UMAPcells, idents = c("GBO_CAR"))
+```
+
+```{r}
+#Idents(UMAP_GBO_CAR)<-'seurat_clusters'
+Idents(UMAPcells)<-'seurat_clusters'
+
+#Cluster 6 is GBO heavily impacted by CAR, Cluster 8 is most of the infiltrated CAR.
+#Other GBO clusters are 0, 5, 7, 3. Other immune clusters are 1, 4, 2
+
+#1. Define a “sender/niche” cell population and a “receiver/target” cell population present in your expression data and determine which genes are expressed in both populations
+## receiver
+receiver = c("6","0","5","7","3")
+expressed_genes_receiver = get_expressed_genes(receiver, UMAPcells, pct = 0.10)
+background_expressed_genes = expressed_genes_receiver %>% .[. %in% rownames(ligand_target_matrix)]
+
+## sender
+#sender_celltypes = c("1","4","2","8")
+sender_celltypes = c("8")
+
+list_expressed_genes_sender = sender_celltypes %>% unique() %>% lapply(get_expressed_genes, UMAPcells, 0.10) # lapply to get the expressed genes of every sender cell type separately here
+expressed_genes_sender = list_expressed_genes_sender %>% unlist() %>% unique()
+```
+
+```{r}
+#2. Define a gene set of interest: these are the genes in the “receiver/target” cell population that are potentially affected by ligands expressed by interacting cells (e.g. genes differentially expressed upon cell-cell interaction)
+seurat_obj_receiver= subset(UMAPcells, idents = receiver)
+seurat_obj_receiver = SetIdent(UMAPcells, value = seurat_obj_receiver[["sample"]])
+
+condition_oi = "GBO_CAR"
+condition_reference = "GBO_2h" 
+  
+DE_table_receiver = FindMarkers(object = seurat_obj_receiver, ident.1 = condition_oi, ident.2 = condition_reference, min.pct = 0.10) %>% rownames_to_column("gene")
+
+geneset_oi = DE_table_receiver %>% filter(p_val_adj <= 0.05 & abs(avg_log2FC) >= 0.25) %>% pull(gene)
+geneset_oi = geneset_oi %>% .[. %in% rownames(ligand_target_matrix)]
+```
+```{r}
+#3. Define a set of potential ligands: these are ligands that are expressed by the “sender/niche” cell population and bind a (putative) receptor expressed by the “receiver/target” population
+ligands = lr_network %>% pull(from) %>% unique()
+receptors = lr_network %>% pull(to) %>% unique()
+
+expressed_ligands = intersect(ligands,expressed_genes_sender)
+expressed_receptors = intersect(receptors,expressed_genes_receiver)
+
+potential_ligands = lr_network %>% filter(from %in% expressed_ligands & to %in% expressed_receptors) %>% pull(from) %>% unique()
+```
+
+```{r}
+#4) Perform NicheNet ligand activity analysis: rank the potential ligands based on the presence of their target genes in the gene set of interest (compared to the background set of genes)
+ligand_activities = predict_ligand_activities(geneset = geneset_oi, background_expressed_genes = background_expressed_genes, ligand_target_matrix = ligand_target_matrix, potential_ligands = potential_ligands)
+
+ligand_activities = ligand_activities %>% arrange(-pearson) %>% mutate(rank = rank(desc(pearson)))
+ligand_activities
+```
+
+```{r}
+best_upstream_ligands = ligand_activities %>% top_n(20, pearson) %>% arrange(-pearson) %>% pull(test_ligand) %>% unique()
+DotPlot(immune_cell, features = best_upstream_ligands %>% rev(), cols = "RdYlBu") + RotatedAxis()
+```
+
+```{r}
+#5) Infer receptors and top-predicted target genes of ligands that are top-ranked in the ligand activity analysis
+active_ligand_target_links_df = best_upstream_ligands %>% lapply(get_weighted_ligand_target_links,geneset = geneset_oi, ligand_target_matrix = ligand_target_matrix, n = 200) %>% bind_rows() %>% drop_na()
+
+active_ligand_target_links = prepare_ligand_target_visualization(ligand_target_df = active_ligand_target_links_df, ligand_target_matrix = ligand_target_matrix, cutoff = 0.33)
+
+order_ligands = intersect(best_upstream_ligands, colnames(active_ligand_target_links)) %>% rev() %>% make.names()
+order_targets = active_ligand_target_links_df$target %>% unique() %>% intersect(rownames(active_ligand_target_links)) %>% make.names()
+rownames(active_ligand_target_links) = rownames(active_ligand_target_links) %>% make.names() # make.names() for heatmap visualization of genes like H2-T23
+colnames(active_ligand_target_links) = colnames(active_ligand_target_links) %>% make.names() # make.names() for heatmap visualization of genes like H2-T23
+
+vis_ligand_target = active_ligand_target_links[order_targets,order_ligands] %>% t()
+
+p_ligand_target_network = vis_ligand_target %>% make_heatmap_ggplot("Prioritized ligands","Predicted target genes", color = "purple",legend_position = "top", x_axis_position = "top",legend_title = "Regulatory potential")  + theme(axis.text.x = element_text(face = "italic")) + scale_fill_gradient2(low = "whitesmoke",  high = "purple", breaks = c(0,0.0045,0.0090))
+p_ligand_target_network
+
+#Receptors of top-ranked ligands
+lr_network_top = lr_network %>% filter(from %in% best_upstream_ligands & to %in% expressed_receptors) %>% distinct(from,to)
+best_upstream_receptors = lr_network_top %>% pull(to) %>% unique()
+
+lr_network_top_df_large = weighted_networks_lr %>% filter(from %in% best_upstream_ligands & to %in% best_upstream_receptors)
+
+lr_network_top_df = lr_network_top_df_large %>% spread("from","weight",fill = 0)
+lr_network_top_matrix = lr_network_top_df %>% select(-to) %>% as.matrix() %>% magrittr::set_rownames(lr_network_top_df$to)
+
+dist_receptors = dist(lr_network_top_matrix, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+    
+dist_ligands = dist(lr_network_top_matrix %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix))
+
+vis_ligand_receptor_network = lr_network_top_matrix[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network) = order_ligands_receptor %>% make.names()
+
+p_ligand_receptor_network = vis_ligand_receptor_network %>% t() %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential")
+p_ligand_receptor_network
+
+```
+```{r}
+#Receptors of top-ranked ligands, but after considering only bona fide ligand-receptor interactions documented in literature and publicly available databases
+lr_network_strict = lr_network %>% filter(database != "ppi_prediction_go" & database != "ppi_prediction")
+ligands_bona_fide = lr_network_strict %>% pull(from) %>% unique()
+receptors_bona_fide = lr_network_strict %>% pull(to) %>% unique()
+
+lr_network_top_df_large_strict = lr_network_top_df_large %>% distinct(from,to) %>% inner_join(lr_network_strict, by = c("from","to")) %>% distinct(from,to)
+lr_network_top_df_large_strict = lr_network_top_df_large_strict %>% inner_join(lr_network_top_df_large, by = c("from","to"))
+
+lr_network_top_df_strict = lr_network_top_df_large_strict %>% spread("from","weight",fill = 0)
+lr_network_top_matrix_strict = lr_network_top_df_strict %>% select(-to) %>% as.matrix() %>% magrittr::set_rownames(lr_network_top_df_strict$to)
+
+dist_receptors = dist(lr_network_top_matrix_strict, method = "binary")
+hclust_receptors = hclust(dist_receptors, method = "ward.D2")
+order_receptors = hclust_receptors$labels[hclust_receptors$order]
+
+dist_ligands = dist(lr_network_top_matrix_strict %>% t(), method = "binary")
+hclust_ligands = hclust(dist_ligands, method = "ward.D2")
+order_ligands_receptor = hclust_ligands$labels[hclust_ligands$order]
+
+order_receptors = order_receptors %>% intersect(rownames(lr_network_top_matrix_strict))
+order_ligands_receptor = order_ligands_receptor %>% intersect(colnames(lr_network_top_matrix_strict))
+
+vis_ligand_receptor_network_strict = lr_network_top_matrix_strict[order_receptors, order_ligands_receptor]
+rownames(vis_ligand_receptor_network_strict) = order_receptors %>% make.names()
+colnames(vis_ligand_receptor_network_strict) = order_ligands_receptor %>% make.names()
+
+p_ligand_receptor_network_strict = vis_ligand_receptor_network_strict %>% t() %>% make_heatmap_ggplot("Ligands","Receptors", color = "mediumvioletred", x_axis_position = "top",legend_title = "Prior interaction potential\n(bona fide)")
+p_ligand_receptor_network_strict
+```
+```{r}
+#Check expression of the ligands by different immune pop
+FeaturePlot(UMAPimmune, features = c("HBEGF", "GZMB","IFNG","IL13","ITGB1","LTA","SEMA4D","TNFSF12","OSM","LIF"))
+FeaturePlot(UMAPcells, features = c("HBEGF", "GZMB","IFNG","IL13","ITGB1","LTA","SEMA4D","TNFSF12","OSM","LIF"))
+FeaturePlot(UMAPimmune, features = c("HBEGF", "GZMB","HSP90B1","IFNG","IL13","ITGB1","LIF","LTA","SEMA4D"))
+
+```
+
+```{r}
+#create a new column called "celltype" 
+UMAPcells[["celltype"]] <- UMAPcells[["seurat_clusters"]]
+
+#6) Add log fold change information of ligands from sender cells
+# DE analysis for each sender cell type
+Idents(UMAPcells) <- 'sample'
+DE_table_all = Idents(UMAPcells) %>% levels() %>% intersect(sender_celltypes) %>% lapply(get_lfc_celltype, seurat_obj = UMAPcells, condition_colname = "sample", condition_oi = "GBO_CAR", condition_reference = c("GBO_TC","CAR","TC"), expression_pct = 0.10, celltype_col = "celltype" %>% reduce(full_join)
+
+DE_table_all[is.na(DE_table_all)] = 0
+
+# Combine ligand activities with DE information
+ligand_activities_de = ligand_activities %>% select(test_ligand, pearson) %>% rename(ligand = test_ligand) %>% left_join(DE_table_all %>% rename(ligand = gene))
+ligand_activities_de[is.na(ligand_activities_de)] = 0
+
+# make LFC heatmap
+lfc_matrix = ligand_activities_de  %>% select(-ligand, -pearson) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities_de$ligand)
+rownames(lfc_matrix) = rownames(lfc_matrix) %>% make.names()
+
+order_ligands = order_ligands[order_ligands %in% rownames(lfc_matrix)]
+vis_ligand_lfc = lfc_matrix[order_ligands,]
+
+colnames(vis_ligand_lfc) = vis_ligand_lfc %>% colnames() %>% make.names()
+
+p_ligand_lfc = vis_ligand_lfc %>% make_threecolor_heatmap_ggplot("Prioritized ligands","LFC in Sender", low_color = "midnightblue",mid_color = "white", mid = median(vis_ligand_lfc), high_color = "red",legend_position = "top", x_axis_position = "top", legend_title = "LFC") + theme(axis.text.y = element_text(face = "italic"))
+p_ligand_lfc
+
+# change colors a bit to make them more stand out
+p_ligand_lfc = p_ligand_lfc + scale_fill_gradientn(colors = c("midnightblue","blue", "grey95", "grey99","firebrick1","red"),values = c(0,0.1,0.2,0.25, 0.40, 0.7,1), limits = c(vis_ligand_lfc %>% min() - 0.1, vis_ligand_lfc %>% max() + 0.1))
+p_ligand_lfc
+```
+
+```{r}
+#7) Summary visualizations of the NicheNet analysis
+# ligand activity heatmap
+ligand_pearson_matrix = ligand_activities %>% select(pearson) %>% as.matrix() %>% magrittr::set_rownames(ligand_activities$test_ligand)
+
+rownames(ligand_pearson_matrix) = rownames(ligand_pearson_matrix) %>% make.names()
+colnames(ligand_pearson_matrix) = colnames(ligand_pearson_matrix) %>% make.names()
+
+vis_ligand_pearson = ligand_pearson_matrix[order_ligands, ] %>% as.matrix(ncol = 1) %>% magrittr::set_colnames("Pearson")
+p_ligand_pearson = vis_ligand_pearson %>% make_heatmap_ggplot("Prioritized ligands","Ligand activity", color = "darkorange",legend_position = "top", x_axis_position = "top", legend_title = "Pearson correlation coefficient\ntarget gene prediction ability)") + theme(legend.text = element_text(size = 9))
+
+# ligand expression Seurat dotplot
+order_ligands_adapted = order_ligands
+order_ligands_adapted[order_ligands_adapted == "H2.M3"] = "H2-M3" # cf required use of make.names for heatmap visualization | this is not necessary if these ligands are not in the list of prioritized ligands!
+order_ligands_adapted[order_ligands_adapted == "H2.T23"] = "H2-T23" # cf required use of make.names for heatmap visualization | this is not necessary if these ligands are not in the list of prioritized ligands!
+rotated_dotplot = DotPlot(seuratObj %>% subset(celltype %in% sender_celltypes), features = order_ligands_adapted, cols = "RdYlBu") + coord_flip() + theme(legend.text = element_text(size = 10), legend.title = element_text(size = 12)) # flip of coordinates necessary because we want to show ligands in the rows when combining all plots
+
+figures_without_legend = cowplot::plot_grid(
+  p_ligand_pearson + theme(legend.position = "none", axis.ticks = element_blank()) + theme(axis.title.x = element_text()),
+  rotated_dotplot + theme(legend.position = "none", axis.ticks = element_blank(), axis.title.x = element_text(size = 12), axis.text.y = element_text(face = "italic", size = 9), axis.text.x = element_text(size = 9,  angle = 90,hjust = 0)) + ylab("Expression in Sender") + xlab("") + scale_y_discrete(position = "right"),
+  p_ligand_lfc + theme(legend.position = "none", axis.ticks = element_blank()) + theme(axis.title.x = element_text()) + ylab(""),
+  p_ligand_target_network + theme(legend.position = "none", axis.ticks = element_blank()) + ylab(""),
+  align = "hv",
+  nrow = 1,
+  rel_widths = c(ncol(vis_ligand_pearson)+6, ncol(vis_ligand_lfc) + 7, ncol(vis_ligand_lfc) + 8, ncol(vis_ligand_target)))
+
+legends = cowplot::plot_grid(
+    ggpubr::as_ggplot(ggpubr::get_legend(p_ligand_pearson)),
+    ggpubr::as_ggplot(ggpubr::get_legend(rotated_dotplot)),
+    ggpubr::as_ggplot(ggpubr::get_legend(p_ligand_lfc)),
+    ggpubr::as_ggplot(ggpubr::get_legend(p_ligand_target_network)),
+    nrow = 1,
+    align = "h", rel_widths = c(1.5, 1, 1, 1))
+
+combined_plot = cowplot::plot_grid(figures_without_legend, legends, rel_heights = c(10,5), nrow = 2, align = "hv")
+combined_plot
+```
+
+
